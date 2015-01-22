@@ -1,50 +1,93 @@
-#ifndef TRANSLATE_H
-#define TRANSLATE_H
+/*
+ * translate.h
+ *
+ *  Created on: 18.12.2014
+ *      Author: louisa
+ */
 
-#include <string.h>
-#include <linux/fs.h> //this is the file structure, file open read close
-#include <linux/cdev.h> // this is for character device, makes cdev avilable
+#ifndef TRANSLATE_H_
+#define TRANSLATE_H_
+
+/* Includes */
+#include <linux/version.h>
 #include <linux/module.h>
+#include <linux/init.h>
 #include <linux/kernel.h>
-#include <linux/uaccess.h> //this is for copy_user vice vers
-#include <linux/semaphore.h> // this is for the semaphore
+#include <linux/fs.h>  	/* char device aufsetzten, device Nummer bekommen */
+#include <linux/cdev.h>
+#include <linux/slab.h> /* für kzalloc */
+#include <linux/wait.h>
+#include <linux/sched.h> /* für wait_event_interruptible */
+#include <linux/mutex.h> /* für Semaphore */
+#include <linux/sem.h>
 #include <linux/moduleparam.h>
-
-MODULE_LICENCE("GPL2");
-
-// Parameterlist for module TRANSLATE
-static int translate_bufsize = 40;
-moduleparam(translate_bufsize, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-MODULE_PARAM_DESC(translate_bufsize, "Buffersize of device. Default is 40");
-
-static int translate_shift = 3;
-moduleparam(translate_shift, int,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-MODULE_PARAM_DESC(translate_shift, "Ceaser shift number. Default is 3");
-
-// Encryption alphabet
-const char alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz";
-int alphabet_size;
-
-void translate_init(void);
-void translate_exit(void);
-
-// open device, to write or read
-static int device_open(struct inode *, struct file *);
-
-// close device, to unlock it
-static int device_close(struct inode *, struct file *);
-
-// read from device, which has to be open
-static ssize_t device_read(struct file *, char *, size_t, loff_t *);
-
-// write on device, which has to be open
-static ssize_t device_write(struct file *, const char *, size_t, loff_t *);
-
-// 
-static loff_t device_lseek(struct file *file, loff_t offset, int orig);
+#include <asm/uaccess.h>
 
 
-module_init(translate_init);
-module_exit(translate_exit);
 
-#endif // TRANSLATE_H
+//#include <pthread.h>
+
+/* Defines */
+#define DEVICE_NODE "trans"
+#define FIRSTMINOR 0
+#define COUNT 1
+#define translate_bufsize 40
+#define translate_shift 3
+	//schreiben möglich, wenn weniger Elemente im Ringbuffer drin sind als translate_bufsize
+#define WRITE_POSSIBLE (device->count < bufsize)
+	//lesen möglich, wenn mehr Elemente als 0 im Ringbuffer drin sind
+#define READ_POSSIBLE (device->count > 0)
+
+/* Variables */
+dev_t dev_num;
+
+int bufsize = translate_bufsize;
+int shiftsize = translate_shift;
+
+struct translate_dev{
+	struct cdev chardevice;
+	char *buffer;
+	char *p_in;		/* Zeiger auf Stelle in Buffer, wo reingeschrieben werden kann */
+	char *p_out; 	/* Zeiger auf Stelle in Buffer, wo herausgelesen weerden kann */
+	int count; 		/* Anzahl der elemente im buffer */
+	int shiftcount;  /* Verschiebungsgrad: bei Trans0 -> +1, bei Trans1 -> -1 */
+	int is_open_read; /* Prädikat ob Device bereits offen zum lesen ist */
+	int is_open_write; /* Prädikat ob Device bereits offen zum schreiben ist */
+	wait_queue_head_t waitqueue_read; /* Warteschlange wenn das Device nicht lesen kann, weil keine Elemente vorhanden */
+	wait_queue_head_t waitqueue_write; /* Warteschlange wenn das Device nicht schreiben kann, weil Buffer voll */
+	struct semaphore semaphore; /* Semaphore */
+};
+
+static int find_index_in_alphabet(char character);
+
+/* Functions */
+static int __init init_translate(void);
+
+static void cleanup_translate(void);
+
+
+/* open, wenn Programm auf Device zugreifen möchte */
+static int open(struct inode *devicefile, struct file *instance);
+
+/* close, wenn Programm Driver space verlässt */
+static int close(struct inode *devicefile, struct file *instance);
+
+/* read, wenn Programm lesen möchte */
+ssize_t read(struct file *instance, char __user *output, size_t count, loff_t *offp);
+
+/* write, wenn Programm schreiben möchte */
+ssize_t write(struct file *instance, const char __user *input, size_t count, loff_t *offp);
+
+/* Strukturen */
+/* Strukt, welches zeigt welche Funktion welche ist */
+struct file_operations fops = {
+	.open = open,
+	.release = close,
+	.read = read,
+	.write = write,
+	.owner = THIS_MODULE,
+};
+
+#endif /* TRANSLATE_H_ */
+
+
