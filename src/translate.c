@@ -19,8 +19,8 @@ char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz";
 
 
 
-static int find_index_in_alphabet(char character){
-	printk(KERN_INFO "Sie befinden sich in Funktion find_index_in_alphabet");
+static int find_index(char character){
+	printk(KERN_INFO "Sie befinden sich in Funktion find_index");
 	int index = 0;
 	while (alphabet[index] != '\0'){
 		if(alphabet[index] == character){
@@ -122,8 +122,8 @@ static void cleanup_translate(void){
 		/* Devices entfernen */
 		int i;
 		for(i=0; i<2; i++){
-			kfree(&ptranslate_devices[i].buffer);
-			cdev_del(&ptranslate_devices[i].chardevice);
+			kfree(&ptranslate_devices[i].buffer); /* frees up kernel space previously used by our devices */
+			cdev_del(&ptranslate_devices[i].chardevice); /* deletes chardevices */
 
 		}
 
@@ -239,12 +239,6 @@ ssize_t read(struct file *instance, char __user *output, size_t count, loff_t *o
 		int bytes_read = 0;
 		int num_read_chars;
 		while(count) {
-			char chari;
-			int index_in_alpha;
-			int shifted_index;
-			char character;
-			int alphabet_length;
-			alphabet_length = strlen(alphabet);
 
 			#ifdef PDEBUG
 				printk(KERN_DEBUG "Variablen in Write() initialisiert");
@@ -354,10 +348,10 @@ ssize_t write(struct file *instance, const char __user *input, size_t count, lof
 			printk(KERN_DEBUG "get_user in write() ausgeführt: %c", chari);
 		#endif
 
-		index_in_alpha = find_index_in_alphabet(chari);
+		index_in_alpha = find_index(chari);
 
 		#ifdef PDEBUG
-			printk(KERN_DEBUG "find_index_in_alphabet() ausgeführt");
+			printk(KERN_DEBUG "find_index() ausgeführt");
 		#endif
 
 		if(index_in_alpha != -1){
